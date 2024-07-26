@@ -1,5 +1,5 @@
 # SimpleLinuxSandbox
-A simple sandbox using Linux namespaces
+A simple sandbox using Linux namespaces and seccomp for process and syscall isolation.
 
 ```
 Usage: simple_sandbox [OPTIONS] COMMAND
