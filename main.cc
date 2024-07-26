@@ -11,14 +11,17 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 // My headers
 #include "util.h"
 #include "log.h"
+#include <seccomp.h>
+#include <errno.h>
 
 using namespace std;
 using namespace util;
 
-SimpleLogStream log;
+SimpleLogStream logger;  // Rename log to logger
 
 struct Options
 {
@@ -116,20 +119,20 @@ Options Options::Parse(int& argc, char**& argv)
 
 void Options::Log()
 {
-    log << boolalpha;
-    log << "Options:\n";
-    log << "  Timeout: " << timeout_ms << " ms\n";
-    log << "  UID: " << uid << "\n";
-    log << "  GID: " << gid << "\n";
-    log << "  Debug: " << debug << "\n";
-    log << "  Mount /proc: " << mount_proc << "\n";
-    log << "  Mount /sys: " << mount_sys << "\n";
-    log << "  Extra mounts (" << extra_mounts.size() << "):\n";
+    logger << boolalpha;
+    logger << "Options:\n";
+    logger << "  Timeout: " << timeout_ms << " ms\n";
+    logger << "  UID: " << uid << "\n";
+    logger << "  GID: " << gid << "\n";
+    logger << "  Debug: " << debug << "\n";
+    logger << "  Mount /proc: " << mount_proc << "\n";
+    logger << "  Mount /sys: " << mount_sys << "\n";
+    logger << "  Extra mounts (" << extra_mounts.size() << "):\n";
     for (auto& x : extra_mounts)
     {
-        log << "    " << x << "\n";
+        logger << "    " << x << "\n";
     }
-    log << "  Mount program: " << mount_program << "\n";
+    logger << "  Mount program: " << mount_program << "\n";
 }
 
 class Sandbox
@@ -137,33 +140,33 @@ class Sandbox
   public:
     explicit Sandbox(Options options_) : options{options_}, ctor_pid{getpid()}
     {
-        log << "\n[" << getpid() << "] Sandbox():\n";
+        logger << "\n[" << getpid() << "] Sandbox():\n";
         rootfs = CreateTempFolder("/tmp/sandbox_");
         ChangeMode(rootfs, 0755);
-        log << " rootfs = " << rootfs << "\n";
+        logger << " rootfs = " << rootfs << "\n";
         CreatePrivateMount(rootfs);
         for (auto& folder : always_mount)
         {
             if (PathExists(folder))
             {
                 string mount_point = rootfs + folder;
-                log << " Creating folder " << mount_point << "\n";
+                logger << " Creating folder " << mount_point << "\n";
                 CreateFolder(mount_point);
             }
         }
-        log << " Creating folder " << rootfs + "/mnt" << "\n";
+        logger << " Creating folder " << rootfs + "/mnt" << "\n";
         CreateFolder(rootfs + "/mnt");
         for (auto& path : options.extra_mounts)
         {
             string mount_point = rootfs + "/mnt/" + BaseName(path);
             if (IsDirectory(path))
             {
-                log << " Creating folder " << mount_point << "\n";
+                logger << " Creating folder " << mount_point << "\n";
                 CreateFolder(mount_point);
             }
             if (IsRegularFile(path))
             {
-                log << " Creating file " << mount_point << "\n";
+                logger << " Creating file " << mount_point << "\n";
                 ofstream pfs(mount_point);
                 pfs.close();
             }
@@ -171,7 +174,7 @@ class Sandbox
         if (options.mount_program)
         {
             program_mount_point = rootfs + program_path;
-            log << " Creating program mount point " << program_mount_point << "\n";
+            logger << " Creating program mount point " << program_mount_point << "\n";
             ofstream pfs(program_mount_point);
             pfs.close();
         }
@@ -182,17 +185,17 @@ class Sandbox
         if (getpid() == ctor_pid)
         {
             try { // We don't want to throw any exceptions from a dtor
-                log << "\n[" << getpid() << "] ~Sandbox():\n";
-                log << " ctor_pid = " << ctor_pid << "\n";
+                logger << "\n[" << getpid() << "] ~Sandbox():\n";
+                logger << " ctor_pid = " << ctor_pid << "\n";
                 if (options.mount_program)
                 {
-                    log << " Deleting " << program_mount_point << "\n";
+                    logger << " Deleting " << program_mount_point << "\n";
                     DeleteFile(program_mount_point);
                 }
                 for (auto& path : options.extra_mounts)
                 {
                     string mount_point = rootfs + "/mnt/" + BaseName(path);
-                    log << " Deleting " << mount_point << "\n";
+                    logger << " Deleting " << mount_point << "\n";
                     if (IsDirectory(mount_point))
                     {
                         DeleteFolder(mount_point);
@@ -202,25 +205,25 @@ class Sandbox
                         DeleteFile(mount_point);
                     }
                 }
-                log << " Deleting " << rootfs + "/mnt" << "\n";
+                logger << " Deleting " << rootfs + "/mnt" << "\n";
                 DeleteFolder(rootfs + "/mnt");
                 for (auto& folder : always_mount)
                 {
                     string mount_point = rootfs + folder;
                     if (PathExists(mount_point))
                     {
-                        log << " Deleting " << mount_point << "\n";
+                        logger << " Deleting " << mount_point << "\n";
                         DeleteFolder(mount_point);
                     }
                 }
-                log << " Unmounting rootfs @ " << rootfs << "\n";
+                logger << " Unmounting rootfs @ " << rootfs << "\n";
                 Unmount(rootfs);
-                log << " Deleting rootfs @ " << rootfs << "\n";
+                logger << " Deleting rootfs @ " << rootfs << "\n";
                 DeleteFolder(rootfs);
-                log << "Finished cleanup\n";
+                logger << "Finished cleanup\n";
             }
             catch (const exception& e) {
-                log << "~Sandbox - error cleaning up: " << e.what() << "\n";
+                logger << "~Sandbox - error cleaning up: " << e.what() << "\n";
             }
         }
     }
@@ -241,7 +244,7 @@ class Sandbox
     void unshare_mount(char* args[])
     {
         try {
-            log << "\n[" << getpid() << "] unshare_mount():\n";
+            logger << "\n[" << getpid() << "] unshare_mount():\n";
             int flags = CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS |
                         CLONE_NEWNET | CLONE_NEWPID | CLONE_SYSVSEM;
             // TODO: Add CLONE_NEWCGROUP for Linux 4.6+
@@ -253,7 +256,7 @@ class Sandbox
                 if (PathExists(folder))
                 {
                     string mount_point = rootfs + folder;
-                    log << " Mounting folder " << folder << " at " << mount_point << "\n";
+                    logger << " Mounting folder " << folder << " at " << mount_point << "\n";
                     BindMount(folder, mount_point);
                 }
             }
@@ -263,24 +266,24 @@ class Sandbox
                 string mount_point = rootfs + "/mnt/" + BaseName(path);
                 if (PathExists(mount_point))
                 {
-                    log << " Mounting " << path << " at " << mount_point << "\n";
+                    logger << " Mounting " << path << " at " << mount_point << "\n";
                     BindMount(path, mount_point);
                 }
             }
 
             if (options.mount_program)
             {
-                log << " Mounting program " << args[0] << " at " << program_mount_point << "\n";
+                logger << " Mounting program " << args[0] << " at " << program_mount_point << "\n";
                 BindMount(args[0], program_mount_point);
                 args[0] = strdup(program_path);
             }
 
             ForkCallWait([&]() { chroot_run(args); });
 
-            log << "\n Unmounting...\n";
+            logger << "\n Unmounting...\n";
             if (options.mount_program)
             {
-                log << " Unmounting " << program_mount_point << "\n";
+                logger << " Unmounting " << program_mount_point << "\n";
                 Unmount(program_mount_point);
             }
 
@@ -289,7 +292,7 @@ class Sandbox
                 string mount_point = rootfs + "/mnt/" + BaseName(path);
                 if (PathExists(mount_point))
                 {
-                    log << " Unmounting " << mount_point << "\n";
+                    logger << " Unmounting " << mount_point << "\n";
                     Unmount(mount_point);
                 }
             }
@@ -299,14 +302,14 @@ class Sandbox
                 string mount_point = rootfs + folder;
                 if (PathExists(mount_point))
                 {
-                    log << " Unmounting " << mount_point << "\n";
+                    logger << " Unmounting " << mount_point << "\n";
                     Unmount(mount_point);
                 }
             }
-            log << "[" << getpid() << "] Finished!\n";
+            logger << "[" << getpid() << "] Finished!\n";
         }
         catch (exception& e) {
-            log << "Exception in unshare_mount(): " << e.what() << "\n";
+            logger << "Exception in unshare_mount(): " << e.what() << "\n";
             exit(EXIT_FAILURE);
         }
     }
@@ -314,7 +317,7 @@ class Sandbox
     void chroot_run(char* args[])
     {
         try {
-            log << "\n[" << getpid() << "] chroot_run():\n";
+            logger << "\n[" << getpid() << "] chroot_run():\n";
             Chroot(rootfs);
             Chdir("/");
 
@@ -328,6 +331,8 @@ class Sandbox
                 CreateFolder("/sys");
                 MountSpecialFileSystem("/sys", "sysfs");
             }
+
+            setup_seccomp(); // enable seccomp. todo add option for this
 
             if (options.timeout_ms > 0)
             {
@@ -348,10 +353,10 @@ class Sandbox
                 Unmount("/proc");
                 DeleteFolder("/proc");
             }
-            log << "\n[" << getpid() << "] chroot_run() finished.\n";
+            logger << "\n[" << getpid() << "] chroot_run() finished.\n";
         }
         catch (exception& e) {
-            log << "Exception in chroot_run(): " << e.what() << "\n";
+            logger << "Exception in chroot_run(): " << e.what() << "\n";
             exit(EXIT_FAILURE);
         }
     }
@@ -378,9 +383,50 @@ class Sandbox
         }
         catch(exception& e)
         {
-            log << "Error: " << e.what() << "\n";
+            logger << "Error: " << e.what() << "\n";
             exit(EXIT_FAILURE);
         }
+    }
+
+    void setup_seccomp()
+    {
+        scmp_filter_ctx ctx;
+        ctx = seccomp_init(SCMP_ACT_KILL); // default action: kill process
+
+        // essential system calls
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
+
+        // file-related system calls
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1, SCMP_A1(SCMP_CMP_EQ, O_RDONLY));
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(stat), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(lstat), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(lseek), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(readlink), 0);
+
+        // process-related system calls
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clone), 1, SCMP_A0(SCMP_CMP_MASKED_EQ, CLONE_VM, CLONE_VM));
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fork), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(vfork), 0);
+
+        // network-related system calls
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(socket), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(connect), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
+        seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
+
+        if (seccomp_load(ctx) != 0) {
+            std::cerr << "Failed to load seccomp filter: " << strerror(errno) << std::endl;
+            seccomp_release(ctx);
+            exit(EXIT_FAILURE);
+        }
+
+        seccomp_release(ctx);
     }
 };
 
@@ -392,7 +438,7 @@ int main(int argc, char* argv[])
     Options options = Options::Parse(argc, argv);
     if (options.debug)
     {
-        log.SetOutput(&cerr);
+        logger.SetOutput(&cerr);
     }
     if (argc < 1)
     {

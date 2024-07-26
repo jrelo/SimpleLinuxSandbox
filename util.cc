@@ -28,7 +28,7 @@ bool util::PathExists(string path)
     {
         if (errno != ENOENT)
         {
-            throw system_error(errno, system_category(), "PathExists, lstat() failed");
+            throw system_error(errno, system_category(), "PathExists, lstat() failed for path: " + path);
         }
         return false;
     }
@@ -43,7 +43,7 @@ bool util::IsRegularFile(string path)
     {
         if (errno != ENOENT)
         {
-            throw system_error(errno, system_category(), "IsRegularFile, lstat() failed");
+            throw system_error(errno, system_category(), "IsRegularFile, lstat() failed for path: " + path);
         }
         return false;   // Does not exist
     }
@@ -58,7 +58,7 @@ bool util::IsDirectory(string path)
     {
         if (errno != ENOENT)
         {
-            throw system_error(errno, system_category(), "IsDirectory, lstat() failed");
+            throw system_error(errno, system_category(), "IsDirectory, lstat() failed for path: " + path);
         }
         return false;   // Does not exist
     }
@@ -77,7 +77,7 @@ void util::DeleteFile(string path)
 {
     if (unlink(path.c_str()) < 0)
     {
-        throw system_error(errno, system_category(), "DeleteFile, unlink() failed");
+        throw system_error(errno, system_category(), "DeleteFile, unlink() failed for path: " + path);
     }
 }
 
@@ -85,7 +85,7 @@ void util::DeleteFolder(string path)
 {
     if (rmdir(path.c_str()) < 0)
     {
-        throw system_error(errno, system_category(), "DeleteFolder, rmdir() failed");
+        throw system_error(errno, system_category(), "DeleteFolder, rmdir() failed for path: " + path);
     }
 }
 
@@ -95,7 +95,7 @@ void util::ChangeMode(string path, unsigned short mode)
     if (chmod(path.c_str(), mode) < 0)
     {
         umask(old_mask); // umask does not change errno
-        throw system_error(errno, system_category(), "ChangeMode, chmod() failed");
+        throw system_error(errno, system_category(), "ChangeMode, chmod() failed for path: " + path);
     }
     umask(old_mask);
 }
@@ -111,7 +111,7 @@ string util::CreateTempFolder(string path_prefix)
     snprintf(buffer, sizeof(buffer), "%s%s", path_prefix.c_str(), X);
     if (mkdtemp(buffer) == NULL)
     {
-        throw system_error(errno, system_category(), "CreateTempFolder, mkdtemp() failed");
+        throw system_error(errno, system_category(), "CreateTempFolder, mkdtemp() failed for prefix: " + path_prefix);
     }
     return string(buffer);
 }
@@ -122,7 +122,7 @@ void util::CreateFolder(string path, unsigned short mode)
     if (mkdir(path.c_str(), mode) < 0)
     {
         umask(old_mask); // umask does not change errno
-        throw system_error(errno, system_category(), "CreateFolder, mkdir() failed");
+        throw system_error(errno, system_category(), "CreateFolder, mkdir() failed for path: " + path);
     }
     umask(old_mask);
 }
@@ -131,11 +131,11 @@ void util::BindMount(string source, string dest)
 {
     if (mount(source.c_str(), dest.c_str(), "", MS_BIND | MS_REC, "") < 0)
     {
-        throw system_error(errno, system_category(), "BindMount, 1st mount() failed");
+        throw system_error(errno, system_category(), "BindMount, 1st mount() failed for source: " + source + " and dest: " + dest);
     }
     if (mount(source.c_str(), dest.c_str(), "", MS_BIND | MS_REMOUNT | MS_RDONLY | MS_PRIVATE, "") < 0)
     {
-        throw system_error(errno, system_category(), "BindMount, 2nd mount() failed");
+        throw system_error(errno, system_category(), "BindMount, 2nd mount() failed for source: " + source + " and dest: " + dest);
     }
 }
 
@@ -143,7 +143,7 @@ void util::Unmount(string dest)
 {
     if (umount(dest.c_str()) < 0)
     {
-        throw system_error(errno, system_category(), "Unmount, umount() failed");
+        throw system_error(errno, system_category(), "Unmount, umount() failed for path: " + dest);
     }
 }
 
@@ -151,7 +151,7 @@ void util::MarkMountPointPrivate(string path)
 {
     if (mount(path.c_str(), path.c_str(), "", MS_REMOUNT | MS_PRIVATE, "") < 0)
     {
-        throw system_error(errno, system_category(), "MarkMountPointPrivate, mount() failed");
+        throw system_error(errno, system_category(), "MarkMountPointPrivate, mount() failed for path: " + path);
     }
 }
 
@@ -159,7 +159,7 @@ void util::CreatePrivateMount(string path)
 {
     if (mount(path.c_str(), path.c_str(), "", MS_BIND | MS_REC, "") < 0)
     {
-        throw system_error(errno, system_category(), "CreatePrivateMount, mount() failed");
+        throw system_error(errno, system_category(), "CreatePrivateMount, mount() failed for path: " + path);
     }
     MarkMountPointPrivate(path);
 }
@@ -168,7 +168,7 @@ void util::MountSpecialFileSystem(string path, string fs)
 {
     if (mount(fs.c_str(), path.c_str(), fs.c_str(), 0, "") < 0)
     {
-        throw system_error(errno, system_category(), "MountSpecialFileSystem, mount() failed");
+        throw system_error(errno, system_category(), "MountSpecialFileSystem, mount() failed for path: " + path + " and fs: " + fs);
     }
 }
 
@@ -176,7 +176,7 @@ void util::Chroot(string new_root)
 {
     if (chroot(new_root.c_str()) < 0)
     {
-        throw system_error(errno, system_category(), "Chroot, chroot() failed");
+        throw system_error(errno, system_category(), "Chroot, chroot() failed for new_root: " + new_root);
     }
 }
 
@@ -184,7 +184,7 @@ void util::Chdir(string path)
 {
     if (chdir(path.c_str()) < 0)
     {
-        throw system_error(errno, system_category(), "Chdir, chdir() failed");
+        throw system_error(errno, system_category(), "Chdir, chdir() failed for path: " + path);
     }
 }
 
@@ -204,7 +204,7 @@ void util::ForkExecWait(char* args[], Task beforeExec)
         // Parent
         if (waitpid(pid, NULL, 0) < 0)
         {
-            throw system_error(errno, system_category(), "ForkExecWait, waitpid() failed");
+            throw system_error(errno, system_category(), "ForkExecWait, waitpid() failed for PID: " + to_string(pid));
         }
     }
     else
@@ -258,7 +258,7 @@ void util::ForkExecWaitTimeout(char* args[], Task beforeExec, unsigned int timeo
     }
     else
     {
-        throw runtime_error("ForkExecWaitTimeout, Could not determine which child process exitted");
+        throw runtime_error("ForkExecWaitTimeout, Could not determine which child process exited");
     }
 }
 
@@ -276,7 +276,7 @@ void util::ForkCallWait(Task task)
         // Parent
         if (waitpid(pid, NULL, 0) < 0)
         {
-            throw system_error(errno, system_category(), "ForkCallWait, waitpid() failed");
+            throw system_error(errno, system_category(), "ForkCallWait, waitpid() failed for PID " + to_string(pid));
         }
     }
     else
@@ -290,6 +290,6 @@ void util::Unshare(int flags)
 {
     if (unshare(flags) < 0)
     {
-        throw system_error(errno, system_category(), "Unshare, unshare() failed");
+        throw system_error(errno, system_category(), "Unshare, unshare() failed with flags " + to_string(flags));
     }
 }
