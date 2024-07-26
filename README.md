@@ -1,4 +1,4 @@
-# SimpleLinuxSandbox
+# SimpleLinuxSandbox-seccomp
 A simple sandbox using Linux namespaces and seccomp for process and syscall isolation.
 
 ```
