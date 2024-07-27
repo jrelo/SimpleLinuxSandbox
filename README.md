@@ -1,4 +1,5 @@
 # SimpleLinuxSandbox-seccomp
+# SECCOMP FUNCTIONALITY CURRENTLY BROKEN
 A simple sandbox using Linux namespaces and seccomp for process and syscall isolation.
 
 ```
