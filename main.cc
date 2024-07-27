@@ -33,6 +33,7 @@ struct Options
     bool mount_sys;
     vector<string> extra_mounts;
     bool mount_program;
+    bool use_cgroup_namespace;
 
     Options()
     {
@@ -43,13 +44,15 @@ struct Options
         mount_proc = false;
         mount_sys = false;
         mount_program = true;
+        use_cgroup_namespace = false;
     }
 
     Options(const Options& o)
      : timeout_ms{o.timeout_ms},
        uid{o.uid}, gid{o.gid}, debug{o.debug},
        mount_proc{o.mount_proc}, mount_sys{o.mount_sys},
-       extra_mounts{o.extra_mounts}, mount_program{o.mount_program}
+       extra_mounts{o.extra_mounts}, mount_program{o.mount_program},
+       use_cgroup_namespace{o.use_cgroup_namespace} 
     {
     }
 
@@ -71,6 +74,7 @@ void Options::Usage(const char* prog)
     cerr << "    -s         Mount /sys\n";
     cerr << "    -m path    Mount path under /mnt/`basename path`\n";
     cerr << "    -M         Do not mount program\n";
+    cerr << "    -c         Use cgroups namespace (Linux +4.6)\n";
     cerr << "\n";
     cerr << "The -m option can be repeated to mount multiple paths.\n";
     cerr << "If the -M option is not specified, the program is mounted at\n";
@@ -83,7 +87,7 @@ Options Options::Parse(int& argc, char**& argv)
 {
     int opt;
     Options options;
-    while ((opt = getopt(argc, argv, "+dt:u:g:psm:M")) != -1) {
+    while ((opt = getopt(argc, argv, "+dt:u:g:psm:Mc")) != -1) {
         switch (opt) {
             case 'd':   options.debug = true;   break;
             case 't':
@@ -105,6 +109,7 @@ Options Options::Parse(int& argc, char**& argv)
             case 's':   options.mount_sys = true;       break;
             case 'm':   options.extra_mounts.push_back(optarg); break;
             case 'M':   options.mount_program = false;  break;
+            case 'c':   options.use_cgroup_namespace = true; break;
             default:
             {
                 Usage(argv[0]);
@@ -247,7 +252,9 @@ class Sandbox
             logger << "\n[" << getpid() << "] unshare_mount():\n";
             int flags = CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS |
                         CLONE_NEWNET | CLONE_NEWPID | CLONE_SYSVSEM;
-            // TODO: Add CLONE_NEWCGROUP for Linux 4.6+
+            if (options.use_cgroup_namespace) {
+                flags |= CLONE_NEWCGROUP;
+            }
             Unshare(flags);
             MarkMountPointPrivate("/");
 
